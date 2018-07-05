@@ -1,0 +1,384 @@
+---
+title: "Spotcap Data Science Case Study"
+author: "Roshan Kumar Bhuyan"
+
+output: 
+  html_document:
+    highlight: default
+    number_sections: yes    
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+---
+
+******
+# Goal
+******
+
+> The goal of this task is to conduct an *Exploratory Data Analysis (EDA)* and model a credit portfolio.
+
+******
+# Universal Libraries
+******
+> Theese libraries are used throught the code. Libraries specific to the line of code are defined with the code.
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F }
+library(tidyverse)
+library(caret)  
+library(magrittr)
+```
+
+******
+# Data Import
+> The Dataset contains 14 labels <br/>
+> **Status**: The Credit Status of the person <br/>
+> **Seniority**: Job Seniority <br/>
+> **Home**: Type of Home Ownership <br/>
+> **Time**: Time requested for Repayment of Loan <br/>
+> **Age**: Age <br/>
+> **Maritial Status**: Maritial Status <br/>
+> **Records**: If the person has a financial Record <br/>
+> **Job**: The Type of Job  <br/>
+> **Expense**: Amoubt of Expense <br/>
+> **Income**: Amount of Income <br/>
+> **Assets**: Price of Assets owned  <br/>
+> **Debt**: Amount of debt held <br/>
+> **Amount**: The amount requested in Loan  <br/>
+> **Price**: The cost of the product  <br/>
+
+******
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F }
+library(readxl)
+mydata <- read_excel("Spotcap Data Science Case Study.xlsx", sheet=1)
+
+```
+******
+# Data Wrangling
+******
+> This step introduces NA's into the dataframe .
+
+```{r,eval=TRUE,echo=TRUE}
+mydata[mydata==99999999]<-  NA
+```
+
+> Introducing addition labels for better visualizations. <br/>
+> **Savings**   = Income - Expenses, <br/>
+> **Net_worth** = Assets - Debt, <br/>
+> **Down_pay**  = Price - Amount,   <br/>
+> **Loan_perc** = Percentage of the cost requested as loan.<br/>
+    
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+mydata2 <- mydata %>%  mutate(Savings = Income-Expenses, Net_worth = Assets-Debt,
+                              Down_pay=Price-Amount,loan_perc= Amount*100/Price) 
+mydata2 <- mydata2[ c(1:8,10,9,15,11,12,16,13,14,17,18)] #Rearranging the Columns
+```
+
+> Changing numerals into factors and adding NA's to unavailable values.
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+mydata2$Status <- factor(mydata2$Status, levels = c(1,2), labels = c("Good", "Bad"))
+mydata2$Home <- factor(mydata2$Home, levels = c(1,2,3,4,5,6),
+                       labels = c("Rent", "Owner","Private", "Ignore", "Parents", "Other"))
+mydata2$Marital <- factor(mydata2$Marital, levels = c(1,2,3,4,5),
+                         labels =  c("Single", "Married", "Widow", "Separated", "Divorced"))
+mydata2$Records <-  factor(mydata2$Records, levels = c(1,2),
+                           labels =  c("Not_Avaliable", "Avaliable"))
+mydata2$Job <- factor(mydata2$Job, levels = c(1,2,3,4),
+                     labels = c("Fixed", "Partime", "Freelance", "Others"))
+summary(mydata2)
+```
+
+******
+# Checking the NA
+******
+> This creates a subset of the main data frame . If there are NA's in any row, its subsetted here <br/>
+
+```{r,eval=TRUE,echo=TRUE}
+Na_DF <- mydata2[rowSums(is.na(mydata2)) > 0,]
+
+```
+> Compare original with subset using visualization <br/>
+> It is observed that the most NA's occour with freelancers who do not show an income. <br/>
+> There exist 80 Rows with NA's which is 1.7% of the dataset.<br/>
+> The Subset needs to be compared to the original dataset.
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+a= ggplot(data = mydata2, aes(x =Job, y = , fill = Status)) + geom_bar() +
+  scale_fill_manual("legend", values = c("Good" = "turquoise", "Bad" = "orangered1","NA"= "grey"))
+b= ggplot(data = Na_DF, aes(x =Job, y = , fill = Status)) + geom_bar() +
+  scale_fill_manual("legend", values = c("Good" = "turquoise", "Bad" = "orangered1","NA"= "grey"))
+library(cowplot)
+plot_grid(a, b, labels = c('Main dataset', "Subset of Na's"),ncol = 1,align = 'V',label_size = 12,
+          label_x = 0.5, label_y = 1, rel_widths = c(1.8, 1.8))
+```
+
+> The overall dataset is similar to NA's dataset hence dropping the NA's might not affect the dataset. <br/>
+> Dropping the NA's. <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+mydata3 <- mydata2[complete.cases(mydata2),]
+```
+
+******
+# Visualization
+******
+> Looking for patterns in the data before applying machine learning. <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+#Comparing Job type with the Credit Status and avaliability of past records.
+ggplot(data = mydata3, aes(x =Job, y = , fill = Status)) + geom_bar() +
+  facet_grid(Records ~ .) + xlab("Job Type") + ylab("Count") + 
+  scale_fill_manual("legend", values = c("Good" = "turquoise", "Bad" = "orangered1"))
+```
+> <br/>
+
+> People with no past records tend to have a good status as compared to the people with records. There exists a bias as having no past records might be helping getting a good credit status.<br/>
+
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+# Comapring credit status with respect to age.
+mydata4 <- mydata3
+# discretization of age into 4 groups for plotting
+mydata4$Age <- cut(mydata4$Age, breaks=c(17, 30, 43, 52 ,Inf),
+                   labels=c("18 - 30", "31 - 43", "44 - 52", "52 - 68"))
+ggplot(data = mydata4, aes(x =Job, y = , fill = Status)) + geom_bar() + facet_grid(Age ~ .) + 
+  xlab("Job Type") + ylab("Count") +
+  scale_fill_manual("legend", values = c("Good" = "turquoise", "Bad" = "orangered1"))
+
+```
+> <br/>
+
+> The credit statuses are fairly similarly distributed across different age groups hence there are no patterns to be seen .<br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+# checking the percentage of cost demanded as loan with respect to status
+ggplot(data=mydata3, aes(x=loan_perc, y=Status))+
+  geom_jitter(size=2, na.rm=TRUE, aes(color=Status, shape=Status)) + 
+  xlab("Percentage of cost requested in loan ") +ylab("Status") 
+```
+> <br/>
+
+> It is observed that people with a bad credit status tend to pay less in downpayment.<br/>
+
+******
+# Prepraring data for Machine Learning to predict Credit Status
+******
+> Creating a 70% - 30% partition for the Train and the Test set using the Caret library
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+set.seed(345)
+indexes <- createDataPartition(y=mydata3$Status, times=1,p=0.7,list=FALSE) 
+trainSet<- mydata3[indexes,]
+testSet <- mydata3[-indexes,]
+
+```
+******
+# Applying the Random Forest Algorithm
+******
+> Training the algorithm <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+set.seed(2334)
+ctrl <- trainControl(method="repeatedcv",number=2,repeats = 2) 
+start.time <- Sys.time()  #To note the time taken to train an algorithm
+Rf_tune <- train(Status~., data = trainSet, method= "rf",preProcess = c( "center","scale"),
+                 trControl = ctrl, tuneLength = 8)
+end.time <- Sys.time()
+saveRDS(Rf_tune, file = "Rf_tune") # Saving the model 
+time.taken <- end.time - start.time
+print(time.taken)
+Rf_tune
+#Rf_tune <- readRDS("Rf_tune") #used to import pretrained model
+plot(Rf_tune)
+
+```
+
+> <br/>
+> Testing  the algorithm <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+Rf_test = predict(Rf_tune, newdata=testSet,metric= accuracy)
+postResample(Rf_test, testSet$Status)
+confusionMatrix(data = Rf_test, testSet$Status)
+```
+> 
+******
+# Applying the Support Vector Machine Algorithm
+******
+> Training the algorithm <br/> 
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+set.seed(238)
+ctrl <- trainControl(method="repeatedcv",number=2,repeats = 2) 
+start.time <- Sys.time()
+Svm_tune <- train(Status~., data = trainSet, method= "svmLinear",preProcess = c( "center","scale"),
+                 trControl = ctrl, tuneLength = 8)
+end.time <- Sys.time()
+saveRDS(Svm_tune, file = "Svm_tune")
+time.taken <- end.time - start.time
+print(time.taken)
+Svm_tune
+
+```
+> <br/> 
+> Testing  the algorithm <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+Svm_test = predict(Svm_tune, newdata=testSet,metric= accuracy)
+postResample(Svm_test, testSet$Status)
+confusionMatrix(data = Svm_test, testSet$Status)
+```
+
+******
+# Applying the KNN Algorithm
+******
+> Training the algorithm <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+set.seed(232)
+ctrl <- trainControl(method = "repeatedcv", number = 2, repeats = 1) 
+start.time <- Sys.time()
+Knn_tune <- train(Status~., data = trainSet, method= "knn",preProcess = c( "center","scale"),
+                  trControl = ctrl,tuneLength = 8)
+end.time <- Sys.time()
+time.taken <- end.time - start.time
+print(time.taken)
+saveRDS(Knn_tune, file = "Knn_tune")
+Knn_tune
+plot(Knn_tune)
+
+```
+
+> <br/>
+> Testing  the algorithm <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+Knn_test = predict(Knn_tune, newdata=testSet,metric= accuracy)
+postResample(Knn_test, testSet$Status)
+confusionMatrix(data = Knn_test, testSet$Status)
+```
+
+******
+# Function to remove outliers.
+******
+> This is a function that removes outliers. <br/>
+> This function uses the Tukey's method which use interquartile (IQR) range approach and was written by Dr. [Klodian Dhana](https://datascienceplus.com/identify-describe-plot-and-removing-the-outliers-from-the-dataset/). <br/>
+This original function replaces outliers with NA but has been modified to replace Outliers with Median.
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+outlierKD <- function(dt, var) {
+  #define variables
+  var_name <- eval(substitute(var),eval(dt))
+  tot <- sum(!is.na(var_name))
+  m1 <- median(var_name, na.rm = T)
+  outlier <- boxplot.stats(var_name)$out
+  mo <- median(outlier)
+  
+  #create 2x2 canvas
+  par(mfrow=c(2, 2), oma=c(0,0,3,0))
+  boxplot(var_name, main="With outliers")
+  hist(var_name, main="With outliers", xlab=NA, ylab=NA)
+  
+  # If value is an outlier introduce median
+  # If not, do nothing
+  var_name <- ifelse(var_name %in% outlier, m1, var_name)
+  m2 <- median(var_name, na.rm = T)
+  na <- length(outlier)
+  boxplot(var_name, main="Without outliers")
+  hist(var_name, main="Without outliers", xlab=NA, ylab=NA)
+  title("Outlier Check for var", outer=TRUE)
+  
+  #print messages
+  message("Outliers identified: ", na, " from ", tot, " observations")
+  message("Proportion (%) of outliers: ", na / tot*100)
+  message("Median of the outliers: ", mo)
+  message("Median without removing outliers: ", m1)
+  message("Median if we remove outliers: ", m2)
+  
+  dt[as.character(substitute(var))] <- invisible(var_name)
+  assign(as.character(as.list(match.call())$dt), dt, envir = .GlobalEnv)
+  message("Outliers successfully removed", "\n")
+  par(mfrow= c(1,1),oma=c(0,0,0,0))
+  return(invisible(dt))
+}
+
+```
+
+******
+# Remove outliers to and apply SVM to check if accuracy is improved
+******
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+mydata5 <- mydata3  # creating a copy of the dataset
+outlierKD(mydata5,Savings) #remove outliers from Savings
+outlierKD(mydata5,Assets)  #remove outliers from Assets
+outlierKD(mydata5,Net_worth) #remove outliers from Net_worth
+
+```
+
+> <br/>
+> Creating a  new partition  
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+set.seed(345)
+indexes <- createDataPartition(y=mydata5$Status, times=1,p=0.7,list=FALSE)
+trainSet1<- mydata5[indexes,]
+testSet1 <- mydata5[-indexes,]
+
+```
+  
+> Training the algorithm <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+set.seed(238)
+ctrl <- trainControl(method="repeatedcv",number=2,repeats = 1) 
+start.time <- Sys.time()
+Svm_tune1 <- train(Status~., data = trainSet1, method= "svmLinear",preProcess = c( "center","scale"),
+                 trControl = ctrl, tuneLength = 8)
+end.time <- Sys.time()
+saveRDS(Svm_tune1, file = "Svm_tune1")
+time.taken <- end.time - start.time
+print(time.taken)
+Svm_tune1
+```
+
+> Testing  the algorithm <br/>
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+Svm_test1 = predict(Svm_tune1, newdata=testSet1,metric= accuracy)
+postResample(Svm_test1, testSet1$Status)
+confusionMatrix(data = Svm_test1, testSet$Status)
+
+```
+
+
+******
+# Applying Recursive Feature Evaluation 
+******
+> This helps us find the top  labels applied in the predictons
+
+```{r,eval=TRUE,echo=TRUE, message=F, warning=F}
+my_control <- rfeControl(functions = rfFuncs, method = "repeatedcv", 
+                         repeats = 3, verbose = FALSE)
+results <- rfe(mydata4[,2:18], mydata4$Status, rfeControl=my_control)
+print(results)
+# list the chosen features
+predictors(results)
+# plot the results
+plot(results, type=c("g", "o"))
+```
+
+******
+# Conclusion 
+******
+> We applied 3 Algorithms to the problem. <br/>
+> The Random forest had a training as well as testing accuracy of about 79 percent but had a training time of 1.16 minutes.  <br/>
+> The Support vector machine had a similar accuracy to Random Forest but the training time was 3.5 seconds. <br/>
+> The Knn had a lower accuracy of 76 percent but the training time was 2.2 seconds. <br/>
+> As SVM has a low training time and a better accuracy hence larger datasets could be trained using this algorithm.<br/>
+> Using the KD outliers function to remove outliers only improved the SVM prediction in the test set by .2 percentage. <br/>
+> It would be fair to assume this model as the optimal model.<br/>
+> The Recursive Feature Engineer provides us with the  5 paramates which affect the Credit Status i.e, "Records","Job","Savings","Seniority","Income".  
+> One business recommendation would be providing more Good Credit Status to people who maintain records. People with no records have more chances of getting a good status, while people with records tend to get a bad status.
+
+
