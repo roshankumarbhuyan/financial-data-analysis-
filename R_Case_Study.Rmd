@@ -1,5 +1,5 @@
 ---
-title: "Spotcap Data Science Case Study"
+title: "Data Science Case Study"
 author: "Roshan Kumar Bhuyan"
 
 output: 
